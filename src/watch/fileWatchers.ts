@@ -17,21 +17,12 @@ export function addTask(
 	if (!watchers.has(chokidarOptionsHash)) watchers.set(chokidarOptionsHash, new Map());
 	const group = watchers.get(chokidarOptionsHash);
 
-	let watcher: FileWatcher = group.get(id);
-	if (!watcher) {
-		watcher = new FileWatcher(id, chokidarOptions, () => {
-			group.delete(id);
-		});
-
-		if (watcher.fileExists) {
-			group.set(id, watcher);
-		} else {
-			return;
-		}
+	const watcher = group.get(id) || new FileWatcher(id, chokidarOptions, group);
+	if (!watcher.fileExists) {
+		if (isTransformDependency) throw new Error(`Transform dependency ${id} does not exist.`);
+	} else {
+		watcher.addTask(task, isTransformDependency);
 	}
-
-	if (isTransformDependency) watcher.transformDependencyTasks.add(task);
-	else watcher.tasks.add(task);
 }
 
 export function deleteTask(id: string, target: Task, chokidarOptionsHash: string) {
@@ -39,10 +30,7 @@ export function deleteTask(id: string, target: Task, chokidarOptionsHash: string
 
 	const watcher = group.get(id);
 	if (watcher) {
-		let deleted = watcher.tasks.delete(target);
-		deleted = watcher.transformDependencyTasks.delete(target) || deleted;
-
-		if (deleted && watcher.tasks.size === 0 && watcher.transformDependencyTasks.size === 0) {
+		if (watcher.deleteTask(target)) {
 			watcher.close();
 			group.delete(id);
 		}
@@ -50,20 +38,20 @@ export function deleteTask(id: string, target: Task, chokidarOptionsHash: string
 }
 
 export default class FileWatcher {
-	fileExists: boolean;
 	fsWatcher: FSWatcher | fs.FSWatcher;
-	tasks: Set<Task>;
-	transformDependencyTasks: Set<Task>;
+	fileExists: boolean;
+	private tasks: Set<Task>;
+	private transformDependencyTasks: Set<Task>;
 
-	constructor(id: string, chokidarOptions: WatchOptions, dispose: () => void) {
+	constructor(id: string, chokidarOptions: WatchOptions, group: Map<string, FileWatcher>) {
 		this.tasks = new Set();
 		this.transformDependencyTasks = new Set();
 
-		let mtime = -1;
+		let modifiedTime = -1;
 
 		try {
 			const stats = fs.statSync(id);
-			mtime = +stats.mtime;
+			modifiedTime = +stats.mtime;
 			this.fileExists = true;
 		} catch (err) {
 			if (err.code === 'ENOENT') {
@@ -80,15 +68,15 @@ export default class FileWatcher {
 			if (event === 'rename' || event === 'unlink') {
 				this.fsWatcher.close();
 				this.trigger(id);
-				dispose();
+				group.delete(id);
 			} else {
 				let stats: fs.Stats;
 				try {
 					stats = fs.statSync(id);
 				} catch (err) {
 					if (err.code === 'ENOENT') {
-						if (mtime !== -1) {
-							mtime = -1;
+						if (modifiedTime !== -1) {
+							modifiedTime = -1;
 							this.trigger(id);
 						}
 						return;
@@ -96,7 +84,7 @@ export default class FileWatcher {
 					throw err;
 				}
 				// debounce
-				if (+stats.mtime - mtime > 50) this.trigger(id);
+				if (+stats.mtime - modifiedTime > 50) this.trigger(id);
 			}
 		};
 
@@ -105,6 +93,20 @@ export default class FileWatcher {
 		} else {
 			this.fsWatcher = fs.watch(id, opts, handleWatchEvent);
 		}
+
+		group.set(id, this);
+	}
+
+	addTask(task: Task, isTransformDependency = false) {
+		if (isTransformDependency) this.transformDependencyTasks.add(task);
+		else this.tasks.add(task);
+	}
+
+	deleteTask(task: Task) {
+		let deleted = this.tasks.delete(task);
+		deleted = this.transformDependencyTasks.delete(task) || deleted;
+
+		return deleted && this.tasks.size === 0 && this.transformDependencyTasks.size === 0;
 	}
 
 	close() {
