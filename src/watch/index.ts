@@ -35,7 +35,7 @@ export class Watcher extends EventEmitter {
 		this.succeeded = false;
 
 		process.nextTick(() => {
-			this._run();
+			this.run();
 		});
 	}
 
@@ -47,18 +47,18 @@ export class Watcher extends EventEmitter {
 		this.removeAllListeners();
 	}
 
-	_makeDirty() {
+	makeDirty() {
 		if (this.dirty) return;
 		this.dirty = true;
 
 		if (!this.running) {
 			setTimeout(() => {
-				this._run();
+				this.run();
 			}, DELAY);
 		}
 	}
 
-	_run() {
+	private run() {
 		this.running = true;
 		this.dirty = false;
 
@@ -84,7 +84,7 @@ export class Watcher extends EventEmitter {
 				this.running = false;
 
 				if (this.dirty) {
-					this._run();
+					this.run();
 				}
 			});
 	}
@@ -167,7 +167,7 @@ export class Task {
 		}
 		if (!this.dirty) {
 			this.dirty = true;
-			this.watcher._makeDirty();
+			this.watcher.makeDirty();
 		}
 	}
 

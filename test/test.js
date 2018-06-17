@@ -8,13 +8,13 @@ describe('rollup', function() {
 	before(() => console.time('Total test time'));
 	after(() => console.timeEnd('Total test time'));
 
-	require('./misc/index.js');
+	/* require('./misc/index.js');
 	require('./function/index.js');
 	require('./form/index.js');
 	require('./chunking-form/index.js');
 	require('./sourcemaps/index.js');
 	require('./incremental/index.js');
 	require('./hooks/index.js');
-	require('./cli/index.js');
+	require('./cli/index.js'); */
 	require('./watch/index.js');
 });

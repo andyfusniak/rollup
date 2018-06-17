@@ -27,27 +27,23 @@ export function addTask(
 
 export function deleteTask(id: string, target: Task, chokidarOptionsHash: string) {
 	const group = watchers.get(chokidarOptionsHash);
-
 	const watcher = group.get(id);
-	if (watcher) {
-		if (watcher.deleteTask(target)) {
-			watcher.close();
-			group.delete(id);
-		}
-	}
+	if (watcher) watcher.deleteTask(target, group);
 }
 
 export default class FileWatcher {
 	fsWatcher: FSWatcher | fs.FSWatcher;
 	fileExists: boolean;
+	private id: string;
 	private tasks: Set<Task>;
 	private transformDependencyTasks: Set<Task>;
 
 	constructor(id: string, chokidarOptions: WatchOptions, group: Map<string, FileWatcher>) {
+		this.id = id;
 		this.tasks = new Set();
 		this.transformDependencyTasks = new Set();
 
-		let modifiedTime = -1;
+		let modifiedTime: number;
 
 		try {
 			const stats = fs.statSync(id);
@@ -66,25 +62,23 @@ export default class FileWatcher {
 
 		const handleWatchEvent = (event: string) => {
 			if (event === 'rename' || event === 'unlink') {
-				this.fsWatcher.close();
-				this.trigger(id);
+				this.close();
 				group.delete(id);
+				this.trigger(id);
 			} else {
 				let stats: fs.Stats;
 				try {
 					stats = fs.statSync(id);
 				} catch (err) {
 					if (err.code === 'ENOENT') {
-						if (modifiedTime !== -1) {
-							modifiedTime = -1;
-							this.trigger(id);
-						}
+						modifiedTime = -1;
+						this.trigger(id);
 						return;
 					}
 					throw err;
 				}
 				// debounce
-				if (+stats.mtime - modifiedTime > 50) this.trigger(id);
+				if (+stats.mtime - modifiedTime > 15) this.trigger(id);
 			}
 		};
 
@@ -102,11 +96,14 @@ export default class FileWatcher {
 		else this.tasks.add(task);
 	}
 
-	deleteTask(task: Task) {
+	deleteTask(task: Task, group: Map<string, FileWatcher>) {
 		let deleted = this.tasks.delete(task);
 		deleted = this.transformDependencyTasks.delete(task) || deleted;
 
-		return deleted && this.tasks.size === 0 && this.transformDependencyTasks.size === 0;
+		if (deleted && this.tasks.size === 0 && this.transformDependencyTasks.size === 0) {
+			group.delete(this.id);
+			this.close();
+		}
 	}
 
 	close() {
