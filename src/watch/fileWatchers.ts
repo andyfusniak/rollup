@@ -112,10 +112,10 @@ export default class FileWatcher {
 
 	trigger(id: string) {
 		this.tasks.forEach(task => {
-			task.makeDirty(id, false);
+			task.invalidate(id, false);
 		});
 		this.transformDependencyTasks.forEach(task => {
-			task.makeDirty(id, true);
+			task.invalidate(id, true);
 		});
 	}
 }
